@@ -601,7 +601,7 @@ export default function LandingPage({
 
       {/* 5. Footer */}
       <footer className={`border-t py-8 text-center text-xs ${isDark ? 'border-[#182338] text-slate-500' : 'border-slate-200 text-slate-500'}`}>
-        <p>© 2026 eFootball League Platform • Free Community Tournament Manager</p>
+        <p>© 2026 eFootball League Platform • Developed by Shibil</p>
       </footer>
 
     </div>

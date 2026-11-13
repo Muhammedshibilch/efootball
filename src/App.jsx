@@ -1296,8 +1296,8 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-[#161d2d] py-5 text-center text-xs text-slate-500">
-        <p>eFootball Community Platform • Multi-Tenant League System • Powered by React & Supabase</p>
+      <footer className="border-t border-slate-200 dark:border-[#161d2d] py-5 text-center text-xs text-slate-500">
+        <p>© 2026 eFootball League Platform • Developed by Shibil</p>
       </footer>
 
       {/* Modals */}
