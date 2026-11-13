@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>eFootball League | Standings & Fixtures</title>
+  
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              dark: '#07090e',
+              card: '#0f1420',
+              border: '#1c2438',
+              accent: '#00e676',
+              cyan: '#38bdf8',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts & FontAwesome Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Canvas Confetti -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="bg-brand-dark text-slate-100 min-h-screen selection:bg-brand-accent selection:text-black">
+  
+  <!-- Sleek Top Header -->
+  <header class="border-b border-brand-border bg-brand-card/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Logo & Season Switcher -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-cyan-400 flex items-center justify-center text-slate-950 font-black text-lg shadow-lg shadow-emerald-500/20">
+          <i class="fa-solid fa-futbol"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="font-bold text-lg text-white font-heading tracking-tight">eFootball League</h1>
+            
+            <!-- Season Dropdown -->
+            <select id="seasonSelector" onchange="handleSeasonChange(this.value)" class="bg-slate-900 border border-emerald-500/30 text-emerald-300 text-xs rounded-lg px-2 py-0.5 font-bold cursor-pointer hover:border-emerald-500/60 transition">
+              <option value="current">Season 1</option>
+              <option value="__NEW__">+ New Season</option>
+            </select>
+          </div>
+          <p class="text-xs text-slate-400 font-medium" id="leagueSubtitleDisplay">Community Tournament</p>
+        </div>
+      </div>
+
+      <!-- Header Actions -->
+      <div class="flex items-center gap-2">
+        <button onclick="openNewSeasonModal()" class="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition">
+          <i class="fa-solid fa-plus text-[11px]"></i>
+          <span>New Season</span>
+        </button>
+
+        <div id="cloudSyncIndicator" class="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-slate-900 text-slate-300 border border-slate-800">
+          <span class="w-2 h-2 rounded-full bg-emerald-400" id="syncDot"></span>
+          <span id="syncText" class="text-[11px]">Cloud Connected</span>
+        </div>
+
+        <button id="adminToggleBtn" onclick="toggleAdminModal()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+          <i class="fa-solid fa-lock" id="adminLockIcon"></i>
+          <span id="adminBtnText">Admin</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-1 border-t border-brand-border/60 overflow-x-auto scrollbar-none py-1.5">
+      <button onclick="switchTab('standings')" id="tab-standings" class="nav-tab active-tab">
+        <i class="fa-solid fa-ranking-star"></i>
+        <span>Standings</span>
+      </button>
+      <button onclick="switchTab('fixtures')" id="tab-fixtures" class="nav-tab">
+        <i class="fa-solid fa-calendar-days"></i>
+        <span>Fixtures & Results</span>
+        <span id="pendingMatchesCount" class="text-xs px-1.5 py-0.2 rounded-full bg-slate-800 text-slate-300 border border-slate-700">0</span>
+      </button>
+      <button onclick="switchTab('stats')" id="tab-stats" class="nav-tab">
+        <i class="fa-solid fa-chart-simple"></i>
+        <span>Player Stats</span>
+      </button>
+      <button onclick="switchTab('rules')" id="tab-rules" class="nav-tab">
+        <i class="fa-solid fa-scale-balanced"></i>
+        <span>Rules</span>
+      </button>
+      <button onclick="switchTab('manage')" id="tab-manage" class="nav-tab">
+        <i class="fa-solid fa-gear"></i>
+        <span>Setup</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24">
+
+    <!-- TAB 1: STANDINGS TABLE -->
+    <section id="view-standings" class="tab-content">
+      <div class="league-card overflow-hidden shadow-2xl">
+        <div class="p-4 sm:p-5 border-b border-brand-border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-slate-900/40">
+          <div>
+            <h2 class="text-lg font-bold text-white font-heading flex items-center gap-2">
+              <i class="fa-solid fa-trophy text-amber-400"></i>
+              <span>League Table</span>
+            </h2>
+            <p class="text-xs text-slate-400">Win: 3 Pts • Draw: 1 Pt • Loss: 0 Pts • 24h Forfeit: 0 Pts</p>
+          </div>
+          
+          <div class="flex items-center gap-2">
+            <button onclick="exportStandingsImage()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-share-nodes text-cyan-400"></i> Copy for WhatsApp
+            </button>
+            <button onclick="renderAll()" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 flex items-center gap-1.5 transition">
+              <i class="fa-solid fa-rotate text-emerald-400"></i> Refresh
+            </button>
+          </div>
+        </div>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm" id="standingsTable">
+            <thead class="bg-slate-950/70 text-slate-400 uppercase text-[11px] tracking-wider font-semibold border-b border-brand-border">
+              <tr>
+                <th class="py-3.5 px-3 text-center w-12">#</th>
+                <th class="py-3.5 px-4 min-w-[160px]">Player</th>
+                <th class="py-3.5 px-3 text-center" title="Matches Played">P</th>
+                <th class="py-3.5 px-3 text-center text-emerald-400" title="Won">W</th>
+                <th class="py-3.5 px-3 text-center text-amber-400" title="Drawn">D</th>
+                <th class="py-3.5 px-3 text-center text-rose-400" title="Lost">L</th>
+                <th class="py-3.5 px-3 text-center hidden md:table-cell" title="Goals For">GF</th>
+                <th class="py-3.5 px-3 text-center hidden md:table-cell" title="Goals Against">GA</th>
+                <th class="py-3.5 px-3 text-center font-medium" title="Goal Difference">GD</th>
+                <th class="py-3.5 px-4 text-center font-black text-emerald-400 text-base" title="Points">PTS</th>
+                <th class="py-3.5 px-3 text-center hidden lg:table-cell">Form</th>
+              </tr>
+            </thead>
+            <tbody id="standingsTableBody" class="divide-y divide-brand-border/60 text-slate-200">
+              <!-- Rendered via JS -->
+            </tbody>
+          </table>
+        </div>
+        
+        <div class="p-3 bg-slate-950/80 border-t border-brand-border text-xs text-slate-400 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-3">
+            <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-amber-400"></span> 1st (Champion)</span>
+            <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-cyan-400"></span> 2nd & 3rd (Podium)</span>
+          </div>
+          <div id="leagueProgressSummary" class="font-semibold text-slate-300">
+            0 / 0 Matches Completed
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: FIXTURES & RESULTS -->
+    <section id="view-fixtures" class="tab-content hidden">
+      <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+        <div>
+          <h2 class="text-xl font-bold text-white font-heading flex items-center gap-2">
+            <i class="fa-solid fa-futbol text-emerald-400"></i>
+            <span>Fixtures & Results</span>
+          </h2>
+          <p class="text-xs text-slate-400">Home & Away rounds. Click any match to submit score or record forfeit.</p>
+        </div>
+
+        <!-- Filter Controls -->
+        <div class="flex flex-wrap items-center gap-2">
+          <select id="fixtureRoundFilter" onchange="filterFixtures()" class="bg-brand-card border border-brand-border text-slate-200 text-xs rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-emerald-500">
+            <option value="ALL">All Rounds</option>
+          </select>
+          <select id="fixtureStatusFilter" onchange="filterFixtures()" class="bg-brand-card border border-brand-border text-slate-200 text-xs rounded-xl px-3 py-2 font-medium focus:outline-none focus:border-emerald-500">
+            <option value="ALL">All Statuses</option>
+            <option value="PENDING">Upcoming / To Play</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="EXPIRED_DISQUALIFIED">Forfeit / 24h Overdue</option>
+          </select>
+          <button onclick="generateTournamentFixtures(true)" class="px-3 py-2 rounded-xl text-xs font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 transition flex items-center gap-1">
+            <i class="fa-solid fa-arrows-rotate"></i> Re-generate
+          </button>
+        </div>
+      </div>
+
+      <!-- Fixtures Grid -->
+      <div id="fixturesContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Rendered via JS -->
+      </div>
+
+      <!-- Empty State -->
+      <div id="noFixturesNotice" class="hidden text-center py-16 px-4 league-card">
+        <div class="w-14 h-14 rounded-2xl bg-slate-900 border border-slate-800 text-emerald-400 flex items-center justify-center mx-auto mb-3 text-2xl">
+          <i class="fa-solid fa-calendar-plus"></i>
+        </div>
+        <h3 class="text-lg font-bold text-white font-heading">No Fixtures Generated Yet</h3>
+        <p class="text-xs text-slate-400 max-w-sm mx-auto mt-1 mb-5">Click below to generate all round-robin Home & Away matches for your players.</p>
+        <button onclick="generateTournamentFixtures(false)" class="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20 transition flex items-center gap-2 mx-auto">
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          <span>Generate Fixtures Now</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- TAB 3: PLAYER STATS -->
+    <section id="view-stats" class="tab-content hidden">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="league-card p-5">
+          <h3 class="font-bold text-sm text-white flex items-center gap-2 mb-4 font-heading">
+            <i class="fa-solid fa-fire text-amber-400"></i> Top Attack (Goals Scored)
+          </h3>
+          <div id="topScorersList" class="space-y-2.5"></div>
+        </div>
+
+        <div class="league-card p-5">
+          <h3 class="font-bold text-sm text-white flex items-center gap-2 mb-4 font-heading">
+            <i class="fa-solid fa-shield text-cyan-400"></i> Best Defense (Least Conceded)
+          </h3>
+          <div id="bestDefenseList" class="space-y-2.5"></div>
+        </div>
+
+        <div class="league-card p-5">
+          <h3 class="font-bold text-sm text-white flex items-center gap-2 mb-4 font-heading">
+            <i class="fa-solid fa-triangle-exclamation text-rose-400"></i> Forfeit / No-Show Log
+          </h3>
+          <div id="punctualityList" class="space-y-2.5"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: RULES EXPLANATION -->
+    <section id="view-rules" class="tab-content hidden">
+      <div class="max-w-2xl mx-auto league-card p-6 space-y-5">
+        <div class="border-b border-brand-border pb-3">
+          <h2 class="text-lg font-bold text-white font-heading">Tournament Regulations</h2>
+          <p class="text-xs text-slate-400 mt-0.5">Rules agreed by all neighborhood players</p>
+        </div>
+
+        <div class="space-y-3 text-xs text-slate-300">
+          <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+            <span class="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 font-bold flex items-center justify-center flex-shrink-0">3</span>
+            <div>
+              <p class="font-bold text-white text-sm">Win = 3 Points</p>
+              <p class="text-slate-400 mt-0.5">The winner of each match receives 3 points.</p>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+            <span class="w-6 h-6 rounded-lg bg-amber-500/20 text-amber-400 font-bold flex items-center justify-center flex-shrink-0">1</span>
+            <div>
+              <p class="font-bold text-white text-sm">Draw = 1 Point</p>
+              <p class="text-slate-400 mt-0.5">If the score is tied at full time, both players get 1 point.</p>
+            </div>
+          </div>
+
+          <div class="p-3 rounded-xl bg-slate-900/80 border border-slate-800 flex items-start gap-3">
+            <span class="w-6 h-6 rounded-lg bg-rose-500/20 text-rose-400 font-bold flex items-center justify-center flex-shrink-0">0</span>
+            <div>
+              <p class="font-bold text-white text-sm">24-Hour No-Show Rule</p>
+              <p class="text-slate-400 mt-0.5">
+                If opponents fail to play their match within 24 hours, the organizer marks it as <strong>Disqualified</strong>. Both players receive <strong>0 points</strong>, but the game is counted in their <strong>Played (P)</strong> count.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: LEAGUE SETUP -->
+    <section id="view-manage" class="tab-content hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Column 1 & 2: Setup Form -->
+        <div class="lg:col-span-2 space-y-6">
+          <div class="league-card p-6">
+            <h3 class="text-base font-bold text-white font-heading flex items-center gap-2 mb-4">
+              <i class="fa-solid fa-sliders text-emerald-400"></i> Season Configuration
+            </h3>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-5 text-xs">
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">Season Name</label>
+                <input type="text" id="configLeagueName" value="eFootball League - Season 1" class="w-full bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">Match Format</label>
+                <select id="configFormat" class="w-full bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+                  <option value="home_and_away">Home & Away (2 Matches against each player)</option>
+                  <option value="single">Single Match (1 Match against each player)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">Match Deadline Window (Hours)</label>
+                <input type="number" id="configDeadlineHours" value="24" min="1" max="168" class="w-full bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div>
+                <label class="block font-semibold text-slate-300 mb-1">Admin Security PIN</label>
+                <input type="password" id="configAdminPin" value="1234" maxlength="6" class="w-full bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500" />
+              </div>
+              <div class="sm:col-span-2 flex justify-end">
+                <button onclick="saveLeagueConfig()" class="px-5 py-2 rounded-xl text-xs font-bold bg-slate-800 hover:bg-slate-700 text-white border border-slate-700 transition">
+                  <i class="fa-solid fa-floppy-disk mr-1"></i> Save Settings
+                </button>
+              </div>
+            </div>
+
+            <!-- Players Section -->
+            <div class="border-t border-brand-border pt-4">
+              <div class="flex items-center justify-between mb-3">
+                <label class="text-sm font-bold text-white flex items-center gap-2 font-heading">
+                  <i class="fa-solid fa-users text-cyan-400"></i>
+                  Registered Players (<span id="playersCountDisplay">0</span>)
+                </label>
+              </div>
+
+              <!-- Add Player -->
+              <div class="flex gap-2 mb-4">
+                <input type="text" id="newPlayerName" placeholder="Enter player name (e.g., Rahul)" class="flex-1 bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" onkeydown="if(event.key==='Enter') addPlayer()" />
+                <input type="text" id="newPlayerTag" placeholder="Gamertag/ID (optional)" class="w-36 hidden sm:block bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500" onkeydown="if(event.key==='Enter') addPlayer()" />
+                <button onclick="addPlayer()" class="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition flex items-center gap-1.5 whitespace-nowrap">
+                  <i class="fa-solid fa-user-plus"></i> Add
+                </button>
+              </div>
+
+              <!-- Quick Presets -->
+              <div class="flex items-center gap-2 mb-4 overflow-x-auto pb-1 text-xs">
+                <span class="text-slate-400">Presets:</span>
+                <button onclick="loadSamplePlayers(10)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">10 Players</button>
+                <button onclick="loadSamplePlayers(12)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">12 Players</button>
+                <button onclick="loadSamplePlayers(14)" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700">14 Players</button>
+                <button onclick="clearAllPlayers()" class="px-2.5 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 border border-rose-800/40">Clear Roster</button>
+              </div>
+
+              <!-- Players Cards -->
+              <div id="playersListContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1"></div>
+            </div>
+
+            <!-- Action footer -->
+            <div class="border-t border-brand-border mt-6 pt-4 flex justify-end">
+              <button onclick="generateTournamentFixtures(true)" class="px-5 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition flex items-center gap-2 shadow-lg shadow-emerald-500/20">
+                <i class="fa-solid fa-wand-magic-sparkles"></i> Generate Fixtures
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Column 3: Cloud & Backup -->
+        <div class="space-y-6">
+          <div class="league-card p-5">
+            <h3 class="font-bold text-sm text-white flex items-center gap-2 mb-2 font-heading">
+              <i class="fa-solid fa-cloud text-emerald-400"></i> Free Cloud Database
+            </h3>
+            <p class="text-xs text-slate-400 mb-3">Live Supabase sync is connected. All devices share the same data.</p>
+            <div class="p-2.5 rounded-lg bg-slate-900 border border-slate-800 text-[11px] font-mono text-emerald-400 truncate">
+              https://afqrcrjmbuopzzxecifi.supabase.co
+            </div>
+          </div>
+
+          <div class="league-card p-5">
+            <h3 class="font-bold text-sm text-white flex items-center gap-2 mb-2 font-heading">
+              <i class="fa-solid fa-file-export text-cyan-400"></i> Backup & WhatsApp
+            </h3>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <button onclick="exportLeagueDataJSON()" class="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-semibold transition flex items-center justify-center gap-1.5">
+                <i class="fa-solid fa-download"></i> Export JSON
+              </button>
+              <label class="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-semibold transition flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                <i class="fa-solid fa-upload"></i> Import JSON
+                <input type="file" id="importFileInput" accept=".json" class="hidden" onchange="importLeagueDataJSON(event)" />
+              </label>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- MODAL: SCORE SUBMISSION / FORFEIT -->
+  <div id="scoreModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="league-card w-full max-w-md p-6 shadow-2xl relative bg-[#0f1420]">
+      <button onclick="closeScoreModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <div class="text-center mb-5">
+        <span class="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-slate-800 text-emerald-400 border border-slate-700" id="modalRoundBadge">Round 1</span>
+        <h3 class="text-lg font-bold text-white mt-1.5 font-heading">Match Result</h3>
+      </div>
+
+      <!-- Match Players Scoreboard Input -->
+      <div class="grid grid-cols-5 items-center gap-2 bg-slate-900/90 p-4 rounded-2xl border border-slate-800 mb-5">
+        <!-- Home Player -->
+        <div class="col-span-2 text-center">
+          <div class="w-10 h-10 rounded-full mx-auto flex items-center justify-center font-bold text-slate-950 text-sm mb-1 shadow" id="modalHomeAvatar" style="background:#10b981;">H</div>
+          <p class="font-bold text-sm text-white truncate" id="modalHomeName">Home</p>
+          <span class="text-[10px] text-slate-400 font-medium">(Home)</span>
+        </div>
+
+        <!-- Scores -->
+        <div class="col-span-1 flex items-center justify-center gap-1">
+          <input type="number" id="modalHomeScore" min="0" max="99" value="0" class="w-10 h-12 text-center bg-slate-800 border border-slate-700 rounded-xl text-xl font-black text-emerald-400 focus:outline-none focus:border-emerald-500 font-mono" />
+          <span class="text-slate-500 font-bold">:</span>
+          <input type="number" id="modalAwayScore" min="0" max="99" value="0" class="w-10 h-12 text-center bg-slate-800 border border-slate-700 rounded-xl text-xl font-black text-emerald-400 focus:outline-none focus:border-emerald-500 font-mono" />
+        </div>
+
+        <!-- Away Player -->
+        <div class="col-span-2 text-center">
+          <div class="w-10 h-10 rounded-full mx-auto flex items-center justify-center font-bold text-slate-950 text-sm mb-1 shadow" id="modalAwayAvatar" style="background:#06b6d4;">A</div>
+          <p class="font-bold text-sm text-white truncate" id="modalAwayName">Away</p>
+          <span class="text-[10px] text-slate-400 font-medium">(Away)</span>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="space-y-2">
+        <button onclick="confirmScoreSubmission('COMPLETED')" class="w-full py-2.5 rounded-xl font-bold text-xs bg-emerald-500 hover:bg-emerald-400 text-slate-950 transition shadow-lg shadow-emerald-500/20">
+          <i class="fa-solid fa-check mr-1.5"></i> Save Score (3 Pts Win / 1 Pt Draw)
+        </button>
+
+        <button onclick="confirmScoreSubmission('EXPIRED_DISQUALIFIED')" class="w-full py-2.5 rounded-xl font-bold text-xs bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 border border-rose-800/60 transition" title="Neither played within 24 hours. Both get 0 points, but it counts in Played count.">
+          <i class="fa-solid fa-ban mr-1.5"></i> Mark 24h Forfeit / No-Show (0 Pts Each)
+        </button>
+
+        <div class="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+          <button onclick="confirmScoreSubmission('PENDING')" class="text-xs text-slate-400 hover:text-slate-200 transition">
+            Reset to Pending
+          </button>
+          <button onclick="closeScoreModal()" class="py-1.5 px-3 rounded-lg text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-300 transition">
+            Cancel
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- MODAL: ADMIN UNLOCK -->
+  <div id="adminModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="league-card w-full max-w-sm p-6 shadow-2xl relative bg-[#0f1420]">
+      <button onclick="toggleAdminModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <div class="text-center mb-4">
+        <div class="w-12 h-12 rounded-2xl bg-slate-900 text-emerald-400 mx-auto flex items-center justify-center text-xl mb-2">
+          <i class="fa-solid fa-shield"></i>
+        </div>
+        <h3 class="text-base font-bold text-white font-heading">Admin Access</h3>
+        <p class="text-xs text-slate-400">Enter Admin PIN to unlock full management rights.</p>
+      </div>
+
+      <div class="space-y-3">
+        <input type="password" id="adminPinPrompt" placeholder="Enter PIN (Default: 1234)" class="w-full bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-sm text-center text-white font-mono focus:outline-none focus:border-emerald-500" onkeydown="if(event.key==='Enter') verifyAdminPin()" />
+        <button onclick="verifyAdminPin()" class="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl transition">
+          Unlock
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: EDIT PLAYER -->
+  <div id="editPlayerModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="league-card w-full max-w-sm p-6 shadow-2xl relative bg-[#0f1420]">
+      <button onclick="closeEditPlayerModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <div class="text-center mb-4">
+        <div class="w-12 h-12 rounded-full mx-auto flex items-center justify-center font-bold text-slate-950 text-base mb-2 shadow" id="editModalAvatarPreview">PL</div>
+        <h3 class="text-base font-bold text-white font-heading">Edit Player</h3>
+      </div>
+
+      <input type="hidden" id="editPlayerId" />
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Player Name</label>
+          <input type="text" id="editPlayerName" class="w-full bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Gamertag / eFootball ID</label>
+          <input type="text" id="editPlayerTag" class="w-full bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1.5">Avatar Color</label>
+          <div id="editColorPalette" class="flex flex-wrap gap-2"></div>
+        </div>
+
+        <div class="pt-2 flex gap-2">
+          <button onclick="saveEditedPlayer()" class="flex-1 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl transition">
+            Save
+          </button>
+          <button onclick="closeEditPlayerModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CREATE NEW SEASON -->
+  <div id="newSeasonModal" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="league-card w-full max-w-sm p-6 shadow-2xl relative bg-[#0f1420]">
+      <button onclick="closeNewSeasonModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+        <i class="fa-solid fa-xmark text-lg"></i>
+      </button>
+
+      <div class="text-center mb-4">
+        <div class="w-12 h-12 rounded-2xl bg-slate-900 text-emerald-400 mx-auto flex items-center justify-center text-xl mb-2">
+          <i class="fa-solid fa-trophy"></i>
+        </div>
+        <h3 class="text-base font-bold text-white font-heading">Start New Season</h3>
+        <p class="text-xs text-slate-400">Previous season data will be preserved in database history.</p>
+      </div>
+
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Season Name</label>
+          <input type="text" id="newSeasonTitle" value="eFootball League - Season 2" class="w-full bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500" />
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1">Match Format</label>
+          <select id="newSeasonFormat" class="w-full bg-slate-900 border border-brand-border rounded-xl px-3 py-2 text-white focus:outline-none focus:border-emerald-500">
+            <option value="home_and_away">Home & Away (2 Matches against each player)</option>
+            <option value="single">Single Match (1 Match against each player)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block font-semibold text-slate-300 mb-1.5">Player Roster Option</label>
+          <div class="space-y-1.5 bg-slate-900 p-2.5 rounded-xl border border-slate-800">
+            <label class="flex items-center gap-2 cursor-pointer text-slate-300">
+              <input type="radio" name="newSeasonRosterOption" value="fresh" checked class="text-emerald-500" />
+              <span>Start with new / fresh player roster</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer text-slate-300">
+              <input type="radio" name="newSeasonRosterOption" value="copy" class="text-emerald-500" />
+              <span>Carry over players from current season</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="pt-2 flex gap-2">
+          <button onclick="confirmCreateNewSeason()" class="flex-1 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl transition shadow-lg shadow-emerald-500/20">
+            Create Season
+          </button>
+          <button onclick="closeNewSeasonModal()" class="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-xl transition">
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
