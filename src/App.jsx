@@ -107,8 +107,8 @@ export default function App() {
   const [isRedirecting, setIsRedirecting] = useState(false)
 
   // Organizations & Seasons
-  const [organizations, setOrganizations] = useState([DEFAULT_DEMO_ORG])
-  const [activeOrg, setActiveOrg] = useState(DEFAULT_DEMO_ORG)
+  const [organizations, setOrganizations] = useState([])
+  const [activeOrg, setActiveOrg] = useState(null)
   const [allTournaments, setAllTournaments] = useState([])
   const [activeTournament, setActiveTournament] = useState(null)
 
@@ -288,32 +288,20 @@ export default function App() {
     return calculateStandings(players, fixtures)
   }, [players, fixtures])
 
-  // Load Organizations (from Supabase or local cache)
+  // Load Organizations (from Supabase)
   const loadOrganizations = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('organizations').select('*').order('name', { ascending: true })
       if (!error && data && data.length > 0) {
-        setOrganizations(data)
         return data
       }
     } catch {
       // Organizations table may not exist yet in Supabase
     }
-    // Fallback: check localStorage
-    const savedOrgs = localStorage.getItem('efootball_orgs')
-    if (savedOrgs) {
-      try {
-        const parsed = JSON.parse(savedOrgs)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setOrganizations(parsed)
-          return parsed
-        }
-      } catch {}
-    }
-    return [DEFAULT_DEMO_ORG]
+    return []
   }, [])
 
-  // Load All Tournaments / Seasons
+  // Load All Tournaments / Seasons (Strictly reflects Supabase - never auto-inserts dummy leagues)
   const loadTournaments = useCallback(async () => {
     try {
       setErrorMsg(null)
@@ -325,55 +313,10 @@ export default function App() {
       if (error) throw error
 
       if (!tourneys || tourneys.length === 0) {
-        // Create initial default Season 1 tournament
-        const defaultTourney = {
-          id: generateUUID(),
-          name: 'eFootball League - Season 1',
-          admin_pin: '1234',
-          format: 'HOME_AWAY',
-          match_duration_hours: 24,
-          status: 'ACTIVE'
-        }
-        const { data: created, error: createErr } = await supabase
-          .from('tournaments')
-          .insert([defaultTourney])
-          .select()
-          .single()
-
-        if (createErr) throw createErr
-        setAllTournaments([created])
-        setActiveTournament(created)
-        return [created]
-      }
-
-      // Discover organizations from existing tournament names if not already present
-      const discoveredMap = new Map()
-      tourneys.forEach(t => {
-        if (!t.name) return
-        const parts = t.name.split(' - ')
-        if (parts.length > 1) {
-          const orgName = parts[0].trim()
-          const key = orgName.toLowerCase()
-          if (orgName && key !== 'efootball league' && !discoveredMap.has(key)) {
-            discoveredMap.set(key, {
-              id: 'org-' + key.replace(/[^a-z0-9]+/g, '-'),
-              name: orgName,
-              pin: t.admin_pin || '1234'
-            })
-          }
-        }
-      })
-
-      if (discoveredMap.size > 0) {
-        setOrganizations(prev => {
-          const merged = [...prev]
-          discoveredMap.forEach(org => {
-            if (!merged.some(m => m.name.toLowerCase() === org.name.toLowerCase())) {
-              merged.push(org)
-            }
-          })
-          return merged
-        })
+        setAllTournaments([])
+        setActiveTournament(null)
+        setOrganizations([])
+        return []
       }
 
       setAllTournaments(tourneys)
@@ -425,26 +368,44 @@ export default function App() {
 
   // Initial Load on Mount (supports incognito mode & shared links seamlessly)
   useEffect(() => {
-    Promise.all([loadOrganizations(), loadTournaments()]).then(([orgs, tourneys]) => {
-      if (tourneys && tourneys.length > 0) {
-        const { orgParam, seasonParam } = parseCurrentRoute()
-        const allLoadedOrgs = [...(orgs || [])]
+    Promise.all([loadOrganizations(), loadTournaments()]).then(([dbOrgs, tourneys]) => {
+      // Build real organizations list solely from Supabase (never inject ghost or deleted leagues)
+      const orgsMap = new Map()
 
-        // Discover and merge all organizations from tournament names
+      // 1. If explicit organizations table has records in Supabase
+      if (dbOrgs && dbOrgs.length > 0) {
+        dbOrgs.forEach(o => {
+          if (o && o.name) {
+            orgsMap.set(o.name.toLowerCase().trim(), o)
+          }
+        })
+      }
+
+      // 2. Discover organizations from active tournaments in Supabase
+      if (tourneys && tourneys.length > 0) {
         tourneys.forEach(t => {
           if (!t.name) return
           const parts = t.name.split(' - ')
-          if (parts.length > 1) {
-            const orgName = parts[0].trim()
-            if (orgName && !allLoadedOrgs.some(o => o.name.toLowerCase().trim() === orgName.toLowerCase().trim())) {
-              allLoadedOrgs.push({
-                id: t.organization_id || ('org-' + orgName.toLowerCase().replace(/[^a-z0-9]+/g, '-')),
-                name: orgName,
-                pin: t.admin_pin || '1234'
-              })
-            }
+          const orgName = (parts.length > 1 ? parts[0] : t.name).trim()
+          const key = orgName.toLowerCase().trim()
+          if (!orgsMap.has(key)) {
+            orgsMap.set(key, {
+              id: t.organization_id || ('org-' + key.replace(/[^a-z0-9]+/g, '-')),
+              name: orgName,
+              pin: t.admin_pin || '1234'
+            })
           }
         })
+      }
+
+      const allLoadedOrgs = Array.from(orgsMap.values())
+      setOrganizations(allLoadedOrgs)
+      try {
+        localStorage.setItem('efootball_orgs', JSON.stringify(allLoadedOrgs))
+      } catch {}
+
+      if (tourneys && tourneys.length > 0) {
+        const { orgParam, seasonParam } = parseCurrentRoute()
 
         // STEP 1: Find target tournament first by seasonParam (exact ID) or orgParam
         let targetTourney = null
@@ -490,27 +451,34 @@ export default function App() {
           }
         } else {
           const savedOrgId = localStorage.getItem('efootball_last_login_org_id')
-          currentOrg = (savedOrgId && allLoadedOrgs.find(o => o.id === savedOrgId || o.name === savedOrgId)) || activeOrg || DEFAULT_DEMO_ORG
+          currentOrg = (savedOrgId && allLoadedOrgs.find(o => o.id === savedOrgId || o.name === savedOrgId)) || allLoadedOrgs[0] || null
         }
 
         // STEP 3: Fallback target tournament within currentOrg if needed
-        if (!targetTourney) {
+        if (!targetTourney && currentOrg) {
           const matchingSeasons = tourneys.filter(t => isTourneyInOrg(t, currentOrg))
           const savedSeasonId = localStorage.getItem('efootball_active_season')
           targetTourney = (savedSeasonId && matchingSeasons.find(t => t.id === savedSeasonId)) || matchingSeasons[0] || tourneys[0]
+        } else if (!targetTourney) {
+          targetTourney = tourneys[0]
         }
 
         // STEP 4: Persist organization and tournament to state & storage
         setActiveOrg(currentOrg)
         setActiveTournament(targetTourney)
-        setOrganizations(allLoadedOrgs)
         try {
-          localStorage.setItem('efootball_last_login_org_id', currentOrg.id)
-          localStorage.setItem('efootball_active_season', targetTourney.id)
+          if (currentOrg) localStorage.setItem('efootball_last_login_org_id', currentOrg.id)
+          if (targetTourney) localStorage.setItem('efootball_active_season', targetTourney.id)
         } catch {}
 
-        loadLeagueData(targetTourney.id)
+        if (targetTourney) {
+          loadLeagueData(targetTourney.id)
+        } else {
+          setLoading(false)
+        }
       } else {
+        setActiveOrg(null)
+        setActiveTournament(null)
         setLoading(false)
       }
     })
@@ -666,9 +634,14 @@ export default function App() {
     }
   }
 
-  // Guest / Demo Access Handler
+  // Guest / Spectator Access Handler
   const handleGuestAccess = (targetOrg) => {
-    const org = targetOrg || DEFAULT_DEMO_ORG
+    const org = targetOrg || organizations[0] || null
+    if (!org) {
+      setIsLoginOrgOpen(false)
+      setIsCreateOrgOpen(true)
+      return
+    }
     setActiveOrg(org)
     setIsAdmin(false)
     navigateTo('league', 'standings')
@@ -1023,7 +996,7 @@ export default function App() {
   // Automatic Logout and return to Landing Page
   const handleLogoutAndGoHome = () => {
     setIsAdmin(false)
-    setActiveOrg(DEFAULT_DEMO_ORG)
+    setActiveOrg(null)
     localStorage.removeItem('efootball_last_login_org_id')
     localStorage.removeItem('efootball_active_season')
     navigateTo('landing')
@@ -1122,10 +1095,14 @@ export default function App() {
           onOpenDemo={() => {
             if (shareWelcome) {
               handleProceedToFixtures()
-            } else {
-              setActiveOrg(DEFAULT_DEMO_ORG)
+            } else if (allTournaments.length > 0) {
+              const org = organizations[0] || { id: 'org', name: allTournaments[0].name.split(' - ')[0] }
+              setActiveOrg(org)
+              setActiveTournament(allTournaments[0])
               setIsAdmin(false)
               navigateTo('league', 'standings')
+            } else {
+              setIsCreateOrgOpen(true)
             }
           }}
           theme={theme}
