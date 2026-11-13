@@ -1297,7 +1297,18 @@ export default function App() {
 
       {/* Footer */}
       <footer className="border-t border-slate-200 dark:border-[#161d2d] py-5 text-center text-xs text-slate-500">
-        <p>© 2026 eFootball League Platform • Developed by Shibil</p>
+        <p className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
+          <span>© 2026 eFootball League Platform</span>
+          <span>•</span>
+          <span>Developed by Shibil</span>
+          <span>•</span>
+          <a
+            href="mailto:shibilmuhammed069@gmail.com"
+            className="text-emerald-600 dark:text-emerald-400 hover:underline transition font-mono"
+          >
+            shibilmuhammed069@gmail.com
+          </a>
+        </p>
       </footer>
 
       {/* Modals */}
